@@ -1,38 +1,41 @@
 import pandas as pd
 
-# Configurações para exibir os números bonitos (sem notação científica)
+# Configurações de visualização
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', 1000)
-pd.options.display.float_format = '{:,.0f}'.format
+pd.options.display.float_format = '{:.1f}%'.format
 
-print("--- ANALISANDO DUQUE DE CAXIAS (RJ) ---\n")
+print("--- DUELO: PREFEITO vs VEREADOR EM CAXIAS ---\n")
 
 arquivo = "br_tse_eleicoes_detalhes_votacao_municipio.csv"
 df = pd.read_csv(arquivo)
 
-# 1. FILTRAGEM: Apenas Duque de Caxias (3301702) e apenas 1º Turno
-# Focamos no 1º turno porque é onde todos os candidatos concorrem
-filtro_caxias = (df['id_municipio'] == 3301702) & (df['turno'] == 1) & (df['cargo'] == 'prefeito')
-caxias = df[filtro_caxias].copy()
+# 1. Filtros: Caxias (3301702) e 1º Turno
+filtro = (df['id_municipio'] == 3301702) & (df['turno'] == 1)
+caxias = df[filtro].copy()
 
-# 2. SELEÇÃO DE COLUNAS: Vamos pegar só o que importa
-colunas_importantes = ['ano', 'aptos', 'comparecimento', 'abstencoes', 'votos_validos', 'votos_brancos', 'votos_nulos']
-tabela = caxias[colunas_importantes].sort_values(by='ano')
+# 2. Engenharia de Dados: Criar métricas percentuais
+# % de votos "jogados fora" (Brancos + Nulos) sobre o total que compareceu
+caxias['% Perdidos'] = ((caxias['votos_brancos'] + caxias['votos_nulos']) / caxias['comparecimento']) * 100
 
-# 3. CRIANDO NOVAS COLUNAS (Engenharia de Dados)
-# Vamos calcular a % de Abstenção (quem faltou)
-tabela['% Abstenção'] = (tabela['abstencoes'] / tabela['aptos']) * 100
+# 3. Preparar a Tabela Comparativa
+# Vamos usar o pivot_table para colocar Prefeito e Vereador lado a lado
+tabela_comparativa = caxias.pivot_table(
+    index='ano',
+    columns='cargo',
+    values='% Perdidos'
+)
 
-# Vamos calcular a % de Votos "Perdidos" (Brancos + Nulos)
-tabela['% Brancos/Nulos'] = ((tabela['votos_brancos'] + tabela['votos_nulos']) / tabela['comparecimento']) * 100
+# 4. Calcular a Diferença (Quem sofre mais nulos?)
+# Se o resultado for positivo, anulam mais para Vereador
+tabela_comparativa['Diferença'] = tabela_comparativa['vereador'] - tabela_comparativa['prefeito']
 
-# Ajustando a formatação para leitura fácil
-tabela['% Abstenção'] = tabela['% Abstenção'].map('{:.1f}%'.format)
-tabela['% Brancos/Nulos'] = tabela['% Brancos/Nulos'].map('{:.1f}%'.format)
+print("Porcentagem de Votos Brancos + Nulos (Quem foi votar mas não escolheu ninguém):")
+print(tabela_comparativa)
 
-# 4. EXIBINDO O RESULTADO FINAL
-print(tabela[['ano', 'aptos', 'comparecimento', '% Abstenção', '% Brancos/Nulos']].to_string(index=False))
-
-print("\n--- CONCLUSÃO RÁPIDA ---")
-ultimo_ano = tabela.iloc[-1]
-print(f"Na última eleição registrada ({ultimo_ano['ano']}), Caxias tinha {ultimo_ano['aptos']} eleitores.")
+print("\n--- ANÁLISE ---")
+media_diferenca = tabela_comparativa['Diferença'].mean()
+if media_diferenca > 0:
+    print(f"Resultado: Em média, o eleitor anula {media_diferenca:.1f}% a mais de votos para VEREADOR.")
+else:
+    print("Resultado: O eleitor anula mais para PREFEITO.")
